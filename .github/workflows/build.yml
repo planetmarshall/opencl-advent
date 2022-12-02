@@ -1,0 +1,119 @@
+name: Build and Test
+on:
+  workflow_dispatch:
+  push:
+    branches:
+    - main
+  pull_request:
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        name: [
+          windows-msvc,
+          windows-msvc-clang,
+          linux-gcc,
+          linux-clang,
+          macos-armv8-clang
+        ]
+        config: [Release, Debug]
+        shared: [shared, static]
+        include:
+          - name: windows-msvc
+            os: windows-2022
+            profile: msvc
+          - name: windows-msvc-clang
+            os: windows-2022
+            profile: msvc-clang
+          - name: linux-gcc
+            os: ubuntu-22.04
+            profile: gcc
+          - name: linux-clang
+            os: ubuntu-22.04
+            profile: clang
+          - name: macos-armv8-clang
+            os: macos-12
+            profile: macos-armv8-clang
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v2
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: runner.os == 'Windows'
+
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: install conan and config
+        run: |
+          pip install --upgrade \
+            conan \
+            ninja
+          conan config install .github/workflows/conan
+
+      - name: Set environment variables
+        run: |
+          PRESET=${{ runner.os }}-${{ matrix.profile }}-${{ matrix.config }}
+          if [[ "${{ runner.os }}" == "macOS" ]]; then
+            PRESET=${{ matrix.profile }}-${{ matrix.config }}
+          fi
+          SHARED=$([[ "${{ matrix.shared }}" == "shared" ]] && echo "True" || echo "False")
+          echo "PRESET=$(echo ${PRESET} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+          echo "BUILD_SHARED=${SHARED}" >> $GITHUB_ENV
+
+      - name: Create conan cache keys
+        run: |
+          CONAN_ARGS="
+            --profile ${{ matrix.profile }} \
+            -s build_type=${{ matrix.config }} \
+            -o shared=${BUILD_SHARED} \
+            --build missing
+          "
+          conan lock create conanfile.py ${CONAN_ARGS} --lockfile-out conan.lock
+
+      - name: Get conan cache (Windows)
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.conan/data
+            C:/.conan
+          key: conan-${{ hashFiles('conan.lock') }}
+        if: runner.os == 'Windows'
+
+      - name: Get conan cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.conan/data/*
+          key: conan-${{ hashFiles('conan.lock') }}
+        if: runner.os != 'Windows'
+
+      - name: Install dependencies with conan
+        run: |
+          conan install . \
+            --install-folder build/${PRESET} \
+            --output-folder build/${PRESET} \
+            --lockfile conan.lock \
+            --build missing
+
+      - name: configure with cmake
+        run: |
+          cmake --preset ${PRESET}
+
+      - name: build with cmake
+        run: |
+          cd build/${PRESET}
+          cmake --build . --config ${{ matrix.config }}
+
+      - name: Run tests
+        if: runner.os != 'macOS'
+        run: |
+          cd build/${PRESET}
+          ctest --extra-verbose --no-tests=error

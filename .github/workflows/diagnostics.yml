@@ -1,0 +1,75 @@
+name: Diagnostics
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  diagnostics:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: install conan and config
+        run: |
+          pip install --upgrade \
+            GitPython \
+            conan \
+            ninja
+          conan config install .github/workflows/conan
+
+      - name: Create conan cache keys
+        run: |
+          CONAN_ARGS="
+            --profile clang \
+            --build missing
+          "
+          conan lock create conanfile.py ${CONAN_ARGS} --lockfile-out conan.lock
+
+      - name: Get conan cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.conan/data/*
+          key: conan-${{ hashFiles('conan.lock') }}
+
+      - name: Install dependencies with conan
+        run: |
+          conan install . \
+            --install-folder build/diagnostics \
+            --output-folder build/diagnostics \
+            --lockfile conan.lock \
+            --build missing
+
+      - name: configure with cmake
+        run: |
+          cmake --preset diagnostics \
+            -D CMAKE_C_COMPILER=$(realpath $(which clang)) \
+            -D CMAKE_CXX_COMPILER=$(realpath $(which clang))++
+
+      - name: run clang-tidy
+        run: |  
+          TARGET="origin/main"
+          if [[ -n "$GITHUB_BASE_REF" ]]; then
+            TARGET="origin/$GITHUB_BASE_REF"
+          fi
+          CHANGES=$(python scripts/changed_files.py build/diagnostics/compile_commands.json --target=${TARGET})
+          if [[ -z "${CHANGES}" ]]; then
+            echo "::notice ::No changes for static analysis"
+            exit 0
+          fi
+          
+          clang-tidy \
+            -p build/diagnostics \
+            --header-filter='.*' \
+            --warnings-as-errors='*' \
+            ${CHANGES}

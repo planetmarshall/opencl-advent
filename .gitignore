@@ -1,0 +1,12 @@
+# Common build folder locations
+build
+cmake-build-debug
+cmake-build-release
+
+CMakeUserPresets.json
+
+#Python virtual environment
+env
+
+# IDE files
+.idea
