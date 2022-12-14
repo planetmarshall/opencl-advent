@@ -75,6 +75,7 @@ class CppSampleProjectConan(ConanFile):
 
     def requirements(self):
         self.requires("boost/1.80.0")
+        self.requires("fmt/9.1.0")
         self.requires("range-v3/0.12.0")
         self.requires("opencl-headers/2022.09.30")
         self.requires("opencl-icd-loader/2022.09.30")
