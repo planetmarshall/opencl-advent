@@ -1,0 +1,2 @@
+#include <advent/advent.hpp>
+

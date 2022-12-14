@@ -1,9 +1,10 @@
-add_executable(eulerapp main.cpp)
+add_executable(adventapp main.cpp)
 
-target_link_libraries(eulerapp
+target_link_libraries(adventapp
         PRIVATE
-            Euler::Euler
+            Advent::Advent
             Boost::program_options
+            OpenCL::OpenCL
         )
 
-install(TARGETS eulerapp RUNTIME DESTINATION bin)
+install(TARGETS adventapp RUNTIME DESTINATION bin)
