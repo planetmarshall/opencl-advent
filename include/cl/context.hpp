@@ -37,6 +37,8 @@ class context {
     [[nodiscard]]
     std::string_view get_platform_version() const { return m_platform_version; }
 
+    void create_program(std::string_view file_name);
+
   private:
     cl_platform_id m_platform_id;
     cl_context m_context;

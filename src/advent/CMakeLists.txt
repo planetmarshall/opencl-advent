@@ -7,6 +7,8 @@ add_library(advent
         ${ADVENT_API_HEADERS}
         )
 
+add_subdirectory(cl)
+
 target_compile_features(advent PUBLIC cxx_std_20)
 set_target_properties(advent PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
 add_library(Advent::Advent ALIAS advent)

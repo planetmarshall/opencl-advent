@@ -32,6 +32,5 @@ int main(int argc, char **argv) {
 
     auto context = cl::context();
 
-
     return 0;
 }
