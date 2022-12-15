@@ -26,8 +26,8 @@
       "name": "linux-clang",
       "inherits": "default-base",
       "cacheVariables": {
-        "CMAKE_C_COMPILER": "clang-14",
-        "CMAKE_CXX_COMPILER": "clang++-14"
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++"
       },
       "hidden": true,
       "condition": {
@@ -40,8 +40,8 @@
       "name": "linux-gcc",
       "inherits": "default-base",
       "cacheVariables": {
-        "CMAKE_C_COMPILER": "gcc-11",
-        "CMAKE_CXX_COMPILER": "g++-11"
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_CXX_COMPILER": "g++"
       },
       "hidden": true,
       "condition": {

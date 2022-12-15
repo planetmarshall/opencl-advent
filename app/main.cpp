@@ -31,6 +31,8 @@ int main(int argc, char **argv) {
 
 
     auto context = cl::context();
+    context.create_program("/home/andrew/projects/opencl-advent/src/advent/cl/advent_01.cl.ptx");
+
 
     return 0;
 }

@@ -1,18 +1,27 @@
 #include <CL/cl.h>
+
 #include <cl/context.hpp>
+#include <fmt/format.h>
 
 #include <array>
+#include <bit>
+#include <fstream>
 #include <optional>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
+namespace fs = std::filesystem;
 using cl::context;
 
 namespace {
+
+constexpr auto CL_DEVICE_CXX_FOR_OPENCL_NUMERIC_VERSION_EXT = 0x4230;
+
 void check_ocl_function(cl_int result) {
     if (result != CL_SUCCESS) {
-        throw std::runtime_error("Error in OpenCL");
+        throw std::runtime_error(fmt::format("Error in OpenCL: {}", result));
     }
 }
 
@@ -44,6 +53,25 @@ std::optional<cl_device_id> get_device(cl_platform_id id) {
     check_ocl_function(clGetDeviceIDs(id, DeviceType, 1, device_ids.data(), nullptr));
     return device_ids[0];
 }
+
+template<int DeviceProperty, typename PropertyType>
+PropertyType get_device_property(cl_device_id device_id) {
+    size_t size;
+    check_ocl_function(clGetDeviceInfo(device_id, DeviceProperty, 0, nullptr, &size));
+    auto data = std::array<std::byte, sizeof(PropertyType)>{};
+    check_ocl_function(clGetDeviceInfo(device_id, DeviceProperty, size, data.data(), nullptr));
+    return std::bit_cast<PropertyType>(data);
+}
+
+template<int DeviceProperty>
+std::string get_device_property(cl_device_id device_id) {
+    size_t size;
+    check_ocl_function(clGetDeviceInfo(device_id, DeviceProperty, 0, nullptr, &size));
+    auto data = std::string(size, '\0');
+    check_ocl_function(clGetDeviceInfo(device_id, DeviceProperty, size, data.data(), nullptr));
+    return data;
+}
+
 }
 
 context::context() {
@@ -70,14 +98,15 @@ context::context() {
         m_device_type = device_type::Gpu;
     }
 
+
     size_t device_buffer_size = 0;
     result = clGetContextInfo(m_context, CL_CONTEXT_DEVICES, 0, nullptr, &device_buffer_size);
     if (result != CL_SUCCESS || device_buffer_size == 0) {
         throw std::runtime_error("No devices available");
     }
     auto devices = std::vector<cl_device_id>(device_buffer_size / sizeof(cl_device_id));
+    check_ocl_function(clGetContextInfo(m_context, CL_CONTEXT_DEVICES, device_buffer_size, devices.data(), nullptr));
     m_device = devices[0];
-    clGetContextInfo(m_context, CL_CONTEXT_DEVICES, device_buffer_size, devices.data(), nullptr);
 
     m_command_queue = clCreateCommandQueueWithProperties(m_context, devices[0], nullptr, &result);
 
@@ -86,4 +115,52 @@ context::context() {
     m_platform_profile = get_platform_property<CL_PLATFORM_PROFILE>(m_platform_id);
     m_platform_version = get_platform_property<CL_PLATFORM_VERSION>(m_platform_id);
 
+}
+
+cl_program cl::context::create_program(const fs::path & source_file) {
+    if (!fs::exists(source_file)) {
+        throw std::runtime_error(fmt::format("source file doe not exist: {}", source_file.string()));
+    }
+    auto is = std::ifstream(source_file, std::ios::binary);
+    //auto oss = std::ostringstream();
+    //oss << is.rdbuf();
+    //auto source_str = oss.str();
+
+    cl_int ret;
+    //auto sources = std::array<const char *, 1>{source_str.data()};
+    //auto lengths = std::array<size_t, 1>{source_str.size()};
+    //auto program = clCreateProgramWithSource(m_context, 1, sources.data(), lengths.data(), &ret);
+
+    std::vector<unsigned char> buffer(std::istreambuf_iterator<char>(is), {});
+
+    //auto program = clCreateProgramWithIL(m_context, buffer.data(), buffer.size(), &ret);
+    std::array<cl_device_id , 1> device_list{m_device};
+    auto binaries = std::array<const unsigned char *, 1>{buffer.data()};
+    auto binary_size = std::array<size_t, 1>{buffer.size()};
+    cl_int status;
+    auto program = clCreateProgramWithBinary(m_context, 1, device_list.data(), binary_size.data(), binaries.data(), &status, &ret);
+    check_ocl_function(ret);
+
+    //ret = clBuildProgram(program, 0, nullptr, "-cl-std=clc++2021", nullptr, nullptr);
+    //ret = clBuildProgram(program, 0, nullptr, nullptr, nullptr, nullptr);
+    auto programs = std::array<cl_program, 1>{program};
+    auto linked_program = clLinkProgram(m_context, 0, nullptr, "-lclc", 1, programs.data(), nullptr, nullptr, &ret);
+    if (ret != CL_SUCCESS) {
+        size_t build_log_size = 0;
+        clGetProgramBuildInfo(program, m_device, CL_PROGRAM_BUILD_LOG_LOG, 0, nullptr, &build_log_size);
+        std::vector<char> build_log(build_log_size);
+        clGetProgramBuildInfo(program, m_device, CL_PROGRAM_BUILD_LOG, build_log.size(), build_log.data(), nullptr);
+        clReleaseProgram(program);
+        throw std::runtime_error(std::string(build_log.begin(), build_log.end()));
+    }
+    //std::array<size_t, 1> program_sizes{1};
+    //check_ocl_function(clGetProgramInfo(program, CL_PROGRAM_BINARY_SIZES, sizeof(size_t), program_sizes.data(), nullptr));
+    //std::vector<unsigned char> program_data(program_sizes[0]);
+    //std::array<unsigned char*, 1> programs{program_data.data()};
+    //clGetProgramInfo(program, CL_PROGRAM_BINARIES, program_sizes[0], programs.data(), nullptr);
+    //auto fp = fopen("advent_01_out.cl.ptx", "wb");
+    //fwrite(programs[0], 1, program_sizes[0], fp);
+    //fclose(fp);
+
+    return program;
 }
