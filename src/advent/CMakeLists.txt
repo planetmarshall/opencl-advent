@@ -1,10 +1,8 @@
 set(ADVENT_API_HEADERS
-        ${CMAKE_SOURCE_DIR}/include/cl/context.hpp
         ${CMAKE_SOURCE_DIR}/include/advent/advent.hpp)
 
 add_library(advent
         advent_01.cpp
-        cl_context.cpp
         ${ADVENT_API_HEADERS}
         )
 

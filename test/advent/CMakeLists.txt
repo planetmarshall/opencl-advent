@@ -1,9 +1,12 @@
 include(GoogleTest)
 add_executable(test_advent
-		test_advent_01.cpp)
+		test_advent_01.cpp
+		main.cpp)
 
 target_link_libraries(test_advent
     PRIVATE
-    Catch2::Catch2WithMain
-    Advent::Advent
+		Advent::Advent
+    	Catch2::Catch2
+		OpenCL::HeadersCpp
+		range-v3::range-v3
 )

@@ -19,7 +19,8 @@ else()
 endif()
 
 find_package(fmt REQUIRED)
-find_package(OpenCL REQUIRED)
+find_package(OpenCLHeadersCpp REQUIRED)
+find_package(range-v3 REQUIRED)
 
 find_package(Catch2 REQUIRED)
 
