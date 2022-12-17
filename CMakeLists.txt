@@ -18,13 +18,11 @@ else()
     endif()
 endif()
 
-find_package(Boost REQUIRED COMPONENTS program_options)
 find_package(fmt REQUIRED)
 find_package(OpenCL REQUIRED)
 
 find_package(Catch2 REQUIRED)
 
 add_subdirectory(src)
-add_subdirectory(app)
 add_subdirectory(test)
 

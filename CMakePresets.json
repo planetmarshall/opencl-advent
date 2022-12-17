@@ -4,9 +4,9 @@
     {
       "name": "default-base",
       "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build/${presetName}",
+      "binaryDir": "${sourceDir}/_build/${presetName}",
       "hidden": true,
-      "toolchainFile": "${sourceDir}/build/${presetName}/conan/conan_toolchain.cmake"
+      "toolchainFile": "${sourceDir}/_build/${presetName}/conan/conan_toolchain.cmake"
     },
     {
       "name": "macos-armv8-cross",
