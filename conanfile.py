@@ -33,9 +33,7 @@ class AdventOfCodeProjectConan(ConanFile):
         self.requires("fmt/9.1.0")
         self.requires("range-v3/0.12.0")
         self.requires("opencl-clhpp/2022.09.30")
-
-    def build_requirements(self):
-        self.tool_requires("catch2/3.1.0")
+        self.requires("spdlog/1.11.0")
 
     def build(self):
         cmake = CMake(self)
