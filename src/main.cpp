@@ -1,8 +1,10 @@
 #define CL_HPP_ENABLE_EXCEPTIONS
-#define CL_HPP_TARGET_OPENCL_VERSION 200
+#define CL_HPP_TARGET_OPENCL_VERSION 300
 
 #include <CL/opencl.hpp>
 #include <fmt/format.h>
+#include <range/v3/algorithm.hpp>
+#include <spdlog/spdlog.h>
 
 #include <filesystem>
 #include <fstream>
@@ -10,19 +12,19 @@
 #include <memory>
 #include <vector>
 
+
 namespace fs = std::filesystem;
 
 namespace {
-    std::tuple<cl::coarse_svm_vector<int>, cl::coarse_svm_vector<int>, cl::coarse_svm_vector<int>>
+    std::tuple<std::vector<int>, std::vector<int>, std::vector<int>>
     load_data(const fs::path & data_file) {
         if (!fs::exists(data_file)) {
             throw std::runtime_error(fmt::format("data file {} does not exist", data_file.string()));
         }
         auto fs = std::ifstream(data_file);
-        cl::SVMAllocator<int, cl::SVMTraitCoarse<>> svm_alloc;
-        cl::coarse_svm_vector<int> values(svm_alloc);
-        cl::coarse_svm_vector<int> offsets(svm_alloc);
-        cl::coarse_svm_vector<int> counts(svm_alloc);
+        std::vector<int> values;
+        std::vector<int> offsets;
+        std::vector<int> counts;
         int offset = 0;
         for (std::string line; std::getline(fs, line); ) {
             if (!line.empty()) {
@@ -40,100 +42,72 @@ namespace {
 
 int main(int argc, char **argv)
 {
-    cl::coarse_svm_vector<int> calories;
-    cl::coarse_svm_vector<int> offsets;
-    cl::coarse_svm_vector<int> counts;
-    std::tie(calories, offsets, counts) = load_data(argv[1]);
-
+    const auto& [calories, offsets, counts] = load_data(argv[1]);
     std::vector<cl::Platform> platforms;
     cl::Platform::get(&platforms);
-    cl::Platform plat;
-    for (auto &p : platforms) {
-        std::string platver = p.getInfo<CL_PLATFORM_VERSION>();
-        if (platver.find("OpenCL 2.") != std::string::npos ||
-            platver.find("OpenCL 3.") != std::string::npos) {
-            // Note: an OpenCL 3.x platform may not support all required features!
-            plat = p;
-            std::cout << p.getInfo<CL_PLATFORM_NAME>() << '\n';
-            break;
-        }
-    }
-    if (plat() == 0) {
-        std::cout << "No OpenCL 2.0 or newer platform found.\n";
-        return -1;
-    }
+    auto nvidia_platform = std::find_if(platforms.begin(), platforms.end(), [] (const auto & platform) {
+      auto vendor = platform.template getInfo<CL_PLATFORM_NAME>();
+      return vendor.find("NVIDIA") != std::string::npos;
+    });
 
-    cl::Platform newP = cl::Platform::setDefault(plat);
-    if (newP != plat) {
-        std::cout << "Error setting default platform.\n";
-        return -1;
+    if (nvidia_platform == platforms.end()) {
+        spdlog::error("No OpenCL Platform available");
+        return 1;
     }
+    auto default_platform = cl::Platform::setDefault(*nvidia_platform);
+    if (default_platform() != (*nvidia_platform)()) {
+        spdlog::error("Error setting default platform");
+        return 1;
+    }
+    spdlog::info("Using OpenCL Platform: {}", nvidia_platform->getInfo<CL_PLATFORM_NAME>());
 
     std::string kernel{R"CLC(
-        kernel void count_calories(global const int *calories, global const int *offsets, global const int *counts, global int *partials)
+        kernel void count_calories(global const int* calories, global const int* offsets, global const int* counts, global int *partials)
         {
-          int index = get_global_id(0);
-          int offset = offsets[index];
-          int count = counts[index];
-          partials[index] = 1;
-          printf("offset[%d]: %d\n", index, offsets[index]);
-          printf("count[i]: %d\n", counts[index]);
-          for (int i = offset; i < offset + count; ++i) {
-            partials[index] += calories[i];
-          }
+            int index = get_global_id(0);
+            int offset = offsets[index];
+            int count = counts[index];
+            partials[index] = 0;
+            for (int i = offset; i < offset + count; ++i) {
+                partials[index] += calories[i];
+            }
         }
     )CLC"};
 
     std::vector<std::string> program_sources;
     program_sources.push_back(kernel);
 
-    cl::Program count_calories_program(program_sources);
+    cl::Program program(program_sources);
     try {
-        count_calories_program.build("-cl-std=CL3.0");
+        program.build("-cl-std=CL3.0");
     }
     catch (...) {
-        // Print build info for all devices
         cl_int buildErr = CL_SUCCESS;
-        auto buildInfo = count_calories_program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(&buildErr);
+        auto buildInfo = program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(&buildErr);
         for (auto &pair : buildInfo) {
-            std::cerr << pair.second << std::endl << std::endl;
+            spdlog::error("Build log: {}", pair.second);
         }
 
         return 1;
     }
 
-    //cl::SVMAllocator<int, cl::SVMTraitCoarse<>> svmAlloc;
-    //std::vector<int, cl::SVMAllocator<int, cl::SVMTraitCoarse<>>> inputA(numElements, 1, svmAlloc);
-    cl::coarse_svm_vector<int> partials(offsets.size());
+    auto count_calories_kernel = cl::KernelFunctor<cl::Buffer, cl::Buffer, cl::Buffer, cl::Buffer>(program, "count_calories");
 
-    for (auto v : offsets) {
-        std::cout << v << "\n";
-    }
-    auto count_calories_kernel =
-        cl::KernelFunctor<
-            cl::coarse_svm_vector<int>&,
-            cl::coarse_svm_vector<int>&,
-            cl::coarse_svm_vector<int>&,
-            cl::coarse_svm_vector<int>&
-            >(count_calories_program, "count_calories");
-
+    std::vector<int> output(counts.size());
+    auto calories_buffer = cl::Buffer(calories.begin(), calories.end(), true);
+    auto offsets_buffer = cl::Buffer(offsets.begin(), offsets.end(), true);
+    auto counts_buffer = cl::Buffer(counts.begin(), counts.end(), true);
+    auto output_buffer = cl::Buffer(output.begin(), output.end(), false);
     cl_int error;
-    count_calories_kernel(
-        cl::EnqueueArgs(cl::NDRange(offsets.size())),
-        calories,
-        offsets,
-        counts,
-        partials,
-        error
-    );
+    count_calories_kernel(cl::EnqueueArgs(cl::NDRange(output.size())), calories_buffer, offsets_buffer, counts_buffer, output_buffer, error);
 
-    //cl::copy(outputBuffer, begin(output), end(output));
-
-    std::cout << "Output:\n";
-    for (const auto partial : partials) {
-        std::cout << "\t" << partial << '\n';
+    if (error != CL_SUCCESS) {
+        spdlog::error("Error running kernel");
     }
-    std::cout << "\n\n";
+
+    cl::copy(output_buffer, output.begin(), output.end());
+    auto max = ranges::max_element(output);
+    spdlog::info("The elf carrying the maximum number of calories is elf {} with {} kcal", std::distance(output.begin(), max), *max);
 
     return 0;
 }
