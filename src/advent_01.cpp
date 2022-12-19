@@ -12,7 +12,6 @@
 #include <memory>
 #include <vector>
 
-
 namespace fs = std::filesystem;
 
 namespace {
@@ -99,8 +98,7 @@ int main(int argc, char **argv)
     auto counts_buffer = cl::Buffer(counts.begin(), counts.end(), true);
     auto output_buffer = cl::Buffer(output.begin(), output.end(), false);
     cl_int error;
-    count_calories_kernel(cl::EnqueueArgs(cl::NDRange(output.size())), calories_buffer, offsets_buffer, counts_buffer, output_buffer, error);
-
+    auto evt = count_calories_kernel(cl::EnqueueArgs(cl::NDRange(output.size())), calories_buffer, offsets_buffer, counts_buffer, output_buffer, error);
     if (error != CL_SUCCESS) {
         spdlog::error("Error running kernel");
     }
